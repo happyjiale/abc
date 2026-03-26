@@ -9,16 +9,21 @@
 <body>
   <header class="header">
     <h1>模拟远程服务器日志</h1>
-    <div class="toolbar">
-      <label class="file-label" for="log-select">日志文件</label>
-      <select id="log-select" aria-label="选择日志文件"></select>
-      <button type="button" id="btn-refresh" class="btn">刷新</button>
-    </div>
+    <button type="button" id="btn-refresh" class="btn">刷新列表</button>
   </header>
-  <main class="main">
-    <p id="status" class="status" role="status"></p>
-    <pre id="log-view" class="log-view" aria-live="polite"></pre>
-  </main>
+  <div class="layout">
+    <aside class="sidebar" aria-label="日志文件列表">
+      <h2 class="sidebar__title">日志列表</h2>
+      <p class="sidebar__hint">带 ⚠️ 且高亮的项为检测到错误/告警特征的日志</p>
+      <nav class="log-nav">
+        <ul id="log-list" class="log-list" aria-label="选择要查看的日志"></ul>
+      </nav>
+    </aside>
+    <main class="main">
+      <p id="status" class="status" role="status"></p>
+      <pre id="log-view" class="log-view" aria-live="polite"></pre>
+    </main>
+  </div>
   <script src="/assets/app.js"></script>
 </body>
 </html>

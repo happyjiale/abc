@@ -1,5 +1,6 @@
 """日志查看服务：读取项目 logs 目录下的模拟远程服务器日志，并通过 API 提供给前端。"""
 
+import re
 from pathlib import Path
 from typing import Optional
 
@@ -8,6 +9,14 @@ from flask import Flask, Response, abort, jsonify, send_from_directory
 ROOT = Path(__file__).resolve().parent.parent
 LOGS_DIR = ROOT / "logs"
 FRONTEND_DIR = ROOT / "frontend"
+
+# 列表接口扫描每个文件的前若干字节，匹配常见错误/告警关键字（UTF-8 兼容）
+_LOG_ISSUE_SCAN_BYTES = 512 * 1024
+_LOG_ISSUE_RE = re.compile(
+    rb"(?:\[error\]|\[crit\]|\[alert\]|\[emerg\]|\[warn\]|\[warning\]|"
+    rb"\bERROR\b|\bWARN\b|FATAL|CRITICAL|Traceback|Exception:|panic:)",
+    re.IGNORECASE,
+)
 
 # 前端静态资源通过 /assets/* 提供（与 index.html 中 link/script 一致）
 app = Flask(__name__, static_folder=str(FRONTEND_DIR), static_url_path="/assets")
@@ -28,7 +37,7 @@ OPENAPI_SPEC = {
                 "operationId": "listLogs",
                 "responses": {
                     "200": {
-                        "description": "文件名列表（仅 .log）",
+                        "description": "日志项列表（name + has_issue，有问题优先排序）",
                         "content": {
                             "application/json": {
                                 "schema": {
@@ -36,7 +45,17 @@ OPENAPI_SPEC = {
                                     "properties": {
                                         "files": {
                                             "type": "array",
-                                            "items": {"type": "string"},
+                                            "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                    "name": {"type": "string"},
+                                                    "has_issue": {
+                                                        "type": "boolean",
+                                                        "description": "扫描文件前部是否含错误/告警特征",
+                                                    },
+                                                },
+                                                "required": ["name", "has_issue"],
+                                            },
                                         }
                                     },
                                     "required": ["files"],
@@ -119,6 +138,16 @@ def _safe_log_name(name: str) -> Optional[str]:
     return name
 
 
+def _log_file_has_issue(path: Path) -> bool:
+    """读取日志文件头部字节，检测常见 error/warn 等模式（粗粒度，供列表高亮）。"""
+    try:
+        with path.open("rb") as f:
+            chunk = f.read(_LOG_ISSUE_SCAN_BYTES)
+    except OSError:
+        return False
+    return _LOG_ISSUE_RE.search(chunk) is not None
+
+
 @app.route("/openapi.json")
 def openapi_spec():
     return jsonify(OPENAPI_SPEC)
@@ -136,13 +165,17 @@ def index():
 
 @app.route("/api/logs")
 def list_logs():
-    """返回 logs 目录下所有 .log 文件名（排序）。"""
+    """返回 .log 列表；每项含 name 与 has_issue（按扫描结果排序：有问题优先）。"""
     if not LOGS_DIR.is_dir():
         return jsonify({"files": []})
-    files = sorted(
+    names = sorted(
         f.name for f in LOGS_DIR.iterdir() if f.is_file() and f.suffix.lower() == ".log"
     )
-    return jsonify({"files": files})
+    entries = [
+        {"name": n, "has_issue": _log_file_has_issue(LOGS_DIR / n)} for n in names
+    ]
+    entries.sort(key=lambda x: (not x["has_issue"], x["name"]))
+    return jsonify({"files": entries})
 
 
 @app.route("/api/logs/<filename>")

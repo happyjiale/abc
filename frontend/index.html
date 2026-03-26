@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>远程服务器日志</title>
+  <link rel="stylesheet" href="/assets/style.css" />
+</head>
+<body>
+  <header class="header">
+    <h1>模拟远程服务器日志</h1>
+    <div class="toolbar">
+      <label class="file-label" for="log-select">日志文件</label>
+      <select id="log-select" aria-label="选择日志文件"></select>
+      <button type="button" id="btn-refresh" class="btn">刷新</button>
+    </div>
+  </header>
+  <main class="main">
+    <p id="status" class="status" role="status"></p>
+    <pre id="log-view" class="log-view" aria-live="polite"></pre>
+  </main>
+  <script src="/assets/app.js"></script>
+</body>
+</html>

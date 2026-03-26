@@ -9,8 +9,10 @@ ROOT = Path(__file__).resolve().parent.parent
 LOGS_DIR = ROOT / "logs"
 FRONTEND_DIR = ROOT / "frontend"
 
+# 前端静态资源通过 /assets/* 提供（与 index.html 中 link/script 一致）
 app = Flask(__name__, static_folder=str(FRONTEND_DIR), static_url_path="/assets")
 
+# Swagger /docs 使用的 OpenAPI 描述，与下方路由行为对应
 OPENAPI_SPEC = {
     "openapi": "3.0.3",
     "info": {
@@ -86,7 +88,7 @@ _DOCS_HTML = """<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>OpenAPI — 日志查看 API</title>
   <link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist@5.11.0/swagger-ui.css" crossorigin="anonymous" />
   <style>body{margin:0} #swagger-ui .topbar{display:none}</style>
@@ -109,6 +111,7 @@ _DOCS_HTML = """<!DOCTYPE html>
 
 
 def _safe_log_name(name: str) -> Optional[str]:
+    """仅允许单层文件名、且后缀为 .log，防止路径穿越与任意文件读取。"""
     if not name or name != Path(name).name:
         return None
     if not name.lower().endswith(".log"):
@@ -133,6 +136,7 @@ def index():
 
 @app.route("/api/logs")
 def list_logs():
+    """返回 logs 目录下所有 .log 文件名（排序）。"""
     if not LOGS_DIR.is_dir():
         return jsonify({"files": []})
     files = sorted(
@@ -143,6 +147,7 @@ def list_logs():
 
 @app.route("/api/logs/<filename>")
 def get_log(filename):
+    """读取单个日志全文；非法名 400，不存在 404。"""
     safe = _safe_log_name(filename)
     if not safe:
         abort(400)

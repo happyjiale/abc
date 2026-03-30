@@ -1,24 +1,20 @@
 /**
- * 日志查看页：通过同域 API 拉取 logs 目录下的 .log 列表与内容。
- * 后端需与页面同源（API_BASE 为空）或在此填写完整 API 根地址。
+ * 日志查看页：列表点击后在右侧展示时间线；「原文」跳转 /raw?file=。
  */
 const API_BASE = "";
 
 const listEl = document.getElementById("log-list");
-const viewEl = document.getElementById("log-view");
+const timelineRoot = document.getElementById("timeline-root");
 const statusEl = document.getElementById("status");
 const refreshBtn = document.getElementById("btn-refresh");
 
-/** 当前选中的日志文件名 */
 let selectedName = "";
 
-/** 更新底部状态文案；isError 为 true 时使用错误样式 */
 function setStatus(text, isError = false) {
   statusEl.textContent = text;
   statusEl.classList.toggle("status--error", isError);
 }
 
-/** GET JSON；非 2xx 时抛出带 status 的 Error */
 async function fetchJson(url) {
   const res = await fetch(url);
   if (!res.ok) {
@@ -29,7 +25,6 @@ async function fetchJson(url) {
   return res.json();
 }
 
-/** 将 API 返回的 files 项规范为 { name, has_issue } */
 function normalizeFileEntries(raw) {
   const files = raw || [];
   return files.map((item) => {
@@ -54,7 +49,71 @@ function setActiveButton(name) {
   });
 }
 
-/** 请求 /api/logs，渲染左侧列表；有文件时自动加载第一项（或保持选中若仍存在） */
+function renderTimeline(entries, fileName) {
+  timelineRoot.innerHTML = "";
+  if (!entries.length) {
+    const empty = document.createElement("p");
+    empty.className = "timeline-empty";
+    empty.textContent = "该日志没有可解析的行。";
+    timelineRoot.appendChild(empty);
+    return;
+  }
+
+  const wrap = document.createElement("div");
+  wrap.className = "timeline";
+  wrap.setAttribute("role", "list");
+
+  const cap = document.createElement("div");
+  cap.className = "timeline__caption";
+  cap.textContent = `${fileName} · 共 ${entries.length} 条（上为新）`;
+  timelineRoot.appendChild(cap);
+  timelineRoot.appendChild(wrap);
+
+  for (const row of entries) {
+    const item = document.createElement("div");
+    let cls = `timeline__item timeline__item--${row.mod} timeline__item--band-${row.dateBand}`;
+    if (row.isWeekend) cls += " timeline__item--weekend";
+    if (!row.dateKey) cls += " timeline__item--nodate";
+    item.className = cls;
+    item.setAttribute("role", "listitem");
+
+    const marker = document.createElement("div");
+    marker.className = "timeline__marker";
+    marker.setAttribute("aria-hidden", "true");
+    marker.textContent = row.emoji;
+
+    const body = document.createElement("div");
+    body.className = "timeline__body";
+
+    const meta = document.createElement("div");
+    meta.className = "timeline__meta";
+
+    const dateHead = document.createElement("span");
+    dateHead.className = row.dateKey
+      ? "timeline__date-head"
+      : "timeline__date-head timeline__date-head--unknown";
+    dateHead.textContent = row.dateKey ? row.dateHead : "未解析时间";
+
+    const clock = document.createElement("time");
+    clock.className = "timeline__clock";
+    clock.dateTime = row.ms != null ? new Date(row.ms).toISOString() : "";
+    clock.textContent = row.timeLabel;
+
+    meta.appendChild(dateHead);
+    meta.appendChild(clock);
+
+    const textEl = document.createElement("p");
+    textEl.className = "timeline__text";
+    textEl.textContent = row.text;
+
+    body.appendChild(meta);
+    body.appendChild(textEl);
+    item.appendChild(marker);
+    item.appendChild(body);
+    wrap.appendChild(item);
+  }
+}
+
 async function loadFileList() {
   setStatus("正在加载文件列表…");
   const data = await fetchJson(`${API_BASE}/api/logs`);
@@ -63,7 +122,11 @@ async function loadFileList() {
 
   if (entries.length === 0 || !entries.some((e) => e.name)) {
     setStatus("logs 目录下没有 .log 文件。", true);
-    viewEl.textContent = "";
+    timelineRoot.innerHTML = "";
+    const empty = document.createElement("p");
+    empty.className = "timeline-empty";
+    empty.textContent = "暂无日志可选。";
+    timelineRoot.appendChild(empty);
     selectedName = "";
     return;
   }
@@ -73,6 +136,8 @@ async function loadFileList() {
 
   for (const { name, has_issue } of valid) {
     const li = document.createElement("li");
+    li.className = "log-list__row";
+
     const btn = document.createElement("button");
     btn.type = "button";
     btn.className = "log-list__btn";
@@ -90,9 +155,18 @@ async function loadFileList() {
     btn.appendChild(document.createTextNode(name));
     btn.addEventListener("click", () => {
       setActiveButton(name);
-      loadSelectedLog();
+      loadSelectedTimeline();
     });
+
+    const rawLink = document.createElement("a");
+    rawLink.className = "log-list__raw-link";
+    rawLink.href = `/raw?file=${encodeURIComponent(name)}`;
+    rawLink.textContent = "原文";
+    rawLink.setAttribute("aria-label", `查看 ${name} 原文`);
+    rawLink.addEventListener("click", (e) => e.stopPropagation());
+
     li.appendChild(btn);
+    li.appendChild(rawLink);
     fragment.appendChild(li);
   }
 
@@ -102,22 +176,34 @@ async function loadFileList() {
   const pick = stillThere ? selectedName : valid[0].name;
   setActiveButton(pick);
   setStatus("");
-  await loadSelectedLog();
+  await loadSelectedTimeline();
 }
 
-/** 根据当前选中项请求 /api/logs/<name>，将全文写入预览区 */
-async function loadSelectedLog() {
+async function loadSelectedTimeline() {
   const name = selectedName;
   if (!name) return;
   setStatus(`正在加载 ${name}…`);
-  viewEl.textContent = "";
+  timelineRoot.innerHTML = "";
+  const loading = document.createElement("p");
+  loading.className = "timeline-empty";
+  loading.textContent = "加载中…";
+  timelineRoot.appendChild(loading);
+
   try {
     const data = await fetchJson(
       `${API_BASE}/api/logs/${encodeURIComponent(name)}`
     );
-    viewEl.textContent = data.content ?? "";
-    setStatus(`${data.name} · ${(data.content || "").split("\n").length} 行`);
+    const content = data.content ?? "";
+    const entries = window.LogTimeline.buildTimelineEntries(content);
+    timelineRoot.innerHTML = "";
+    renderTimeline(entries, data.name || name);
+    setStatus(`${data.name || name} · 时间线 ${entries.length} 条`);
   } catch (e) {
+    timelineRoot.innerHTML = "";
+    const err = document.createElement("p");
+    err.className = "timeline-empty timeline-empty--error";
+    err.textContent = e.message || "加载失败";
+    timelineRoot.appendChild(err);
     setStatus(e.message || "加载失败", true);
   }
 }

@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>远程服务器日志</title>
+  <title>日志原文</title>
   <script>
     (function () {
       var k = "app-theme";
@@ -17,7 +17,7 @@
 </head>
 <body>
   <header class="header">
-    <h1>模拟远程服务器日志</h1>
+    <h1 id="raw-title">日志原文</h1>
     <div class="header__actions">
       <div class="theme-switcher" role="group" aria-label="界面主题">
         <span class="theme-switcher__label">主题</span>
@@ -25,27 +25,19 @@
         <button type="button" class="theme-switcher__btn" data-theme-set="light" aria-pressed="false">浅色</button>
         <button type="button" class="theme-switcher__btn" data-theme-set="blue" aria-pressed="false">蓝色</button>
       </div>
-      <button type="button" id="btn-refresh" class="btn">刷新列表</button>
+      <a class="btn btn--link" href="/">返回列表</a>
     </div>
   </header>
-  <div class="layout">
-    <aside class="sidebar" aria-label="日志文件列表">
-      <h2 class="sidebar__title">日志列表</h2>
-      <p class="sidebar__hint">点击文件名在右侧查看时间线；「原文」打开完整日志页面。带 ⚠️ 的项含错误/告警特征。</p>
-      <nav class="log-nav">
-        <ul id="log-list" class="log-list" aria-label="选择要查看的日志"></ul>
-      </nav>
-    </aside>
-    <main class="main">
+  <div class="layout layout--raw">
+    <main class="main main--raw">
       <p id="status" class="status" role="status"></p>
-      <div id="timeline-root" class="timeline-root" aria-label="日志时间线"></div>
+      <pre id="log-view" class="log-view log-view--raw" aria-live="polite"></pre>
     </main>
   </div>
   <script src="/assets/theme.js"></script>
   <script>
     window.AppTheme.initThemeUI(document);
   </script>
-  <script src="/assets/log-timeline.js"></script>
-  <script src="/assets/app.js"></script>
+  <script src="/assets/raw.js"></script>
 </body>
 </html>

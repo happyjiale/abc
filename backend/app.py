@@ -109,11 +109,37 @@ _DOCS_HTML = """<!DOCTYPE html>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>OpenAPI — 日志查看 API</title>
+  <script>
+    (function () {
+      var k = "app-theme";
+      var ok = { dark: 1, light: 1, blue: 1 };
+      var t = null;
+      try { t = localStorage.getItem(k); } catch (e) {}
+      document.documentElement.dataset.theme = ok[t] ? t : "dark";
+    })();
+  </script>
+  <link rel="stylesheet" href="/assets/theme.css" />
   <link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist@5.11.0/swagger-ui.css" crossorigin="anonymous" />
-  <style>body{margin:0} #swagger-ui .topbar{display:none}</style>
+  <style>
+    body { margin: 0; min-height: 100vh; background: var(--bg); color: var(--text); }
+    .docs-bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 0.75rem; padding: 0.5rem 1rem; border-bottom: 1px solid var(--border); background: var(--surface); }
+    #swagger-ui .topbar { display: none; }
+  </style>
 </head>
 <body>
+<div class="docs-bar">
+  <div class="theme-switcher" role="group" aria-label="界面主题">
+    <span class="theme-switcher__label">主题</span>
+    <button type="button" class="theme-switcher__btn" data-theme-set="dark" aria-pressed="false">深色</button>
+    <button type="button" class="theme-switcher__btn" data-theme-set="light" aria-pressed="false">浅色</button>
+    <button type="button" class="theme-switcher__btn" data-theme-set="blue" aria-pressed="false">蓝色</button>
+  </div>
+</div>
 <div id="swagger-ui"></div>
+<script src="/assets/theme.js"></script>
+<script>
+  window.AppTheme.initThemeUI(document);
+</script>
 <script src="https://unpkg.com/swagger-ui-dist@5.11.0/swagger-ui-bundle.js" crossorigin="anonymous"></script>
 <script>
   window.onload = function () {
@@ -161,6 +187,12 @@ def openapi_docs():
 @app.route("/")
 def index():
     return send_from_directory(FRONTEND_DIR, "index.html")
+
+
+@app.route("/raw")
+def raw_log_page():
+    """单日志原文页：查询参数 file= 某 .log 文件名。"""
+    return send_from_directory(FRONTEND_DIR, "raw.html")
 
 
 @app.route("/api/logs")

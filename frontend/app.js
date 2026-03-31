@@ -3,6 +3,9 @@
  */
 const API_BASE = "";
 
+/** 与后端默认 line_limit 对齐，分页拉取直至 has_more 为 false */
+const LOG_PAGE_LINE_LIMIT = 50_000;
+
 const listEl = document.getElementById("log-list");
 const timelineRoot = document.getElementById("timeline-root");
 const statusEl = document.getElementById("status");
@@ -23,6 +26,28 @@ async function fetchJson(url) {
     throw err;
   }
   return res.json();
+}
+
+async function fetchLogFullText(name) {
+  const parts = [];
+  let lineOffset = 0;
+  let lastName = name;
+  while (true) {
+    const q = new URLSearchParams({
+      line_offset: String(lineOffset),
+      line_limit: String(LOG_PAGE_LINE_LIMIT),
+    });
+    const data = await fetchJson(
+      `${API_BASE}/api/logs/${encodeURIComponent(name)}?${q}`
+    );
+    parts.push(data.content ?? "");
+    lastName = data.name || name;
+    if (!data.has_more) break;
+    const n = data.returned_lines ?? 0;
+    if (n <= 0) break;
+    lineOffset += n;
+  }
+  return { name: lastName, content: parts.join("") };
 }
 
 function normalizeFileEntries(raw) {
@@ -190,9 +215,7 @@ async function loadSelectedTimeline() {
   timelineRoot.appendChild(loading);
 
   try {
-    const data = await fetchJson(
-      `${API_BASE}/api/logs/${encodeURIComponent(name)}`
-    );
+    const data = await fetchLogFullText(name);
     const content = data.content ?? "";
     const entries = window.LogTimeline.buildTimelineEntries(content);
     timelineRoot.innerHTML = "";

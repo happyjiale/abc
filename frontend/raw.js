@@ -1,5 +1,7 @@
 const API_BASE = "";
 
+const LOG_PAGE_LINE_LIMIT = 50_000;
+
 const params = new URLSearchParams(window.location.search);
 const fileParam = params.get("file") || "";
 
@@ -22,6 +24,28 @@ async function fetchJson(url) {
   return res.json();
 }
 
+async function fetchLogFullText(name) {
+  const parts = [];
+  let lineOffset = 0;
+  let lastName = name;
+  while (true) {
+    const q = new URLSearchParams({
+      line_offset: String(lineOffset),
+      line_limit: String(LOG_PAGE_LINE_LIMIT),
+    });
+    const data = await fetchJson(
+      `${API_BASE}/api/logs/${encodeURIComponent(name)}?${q}`
+    );
+    parts.push(data.content ?? "");
+    lastName = data.name || name;
+    if (!data.has_more) break;
+    const n = data.returned_lines ?? 0;
+    if (n <= 0) break;
+    lineOffset += n;
+  }
+  return { name: lastName, content: parts.join("") };
+}
+
 async function load() {
   if (!fileParam || !fileParam.toLowerCase().endsWith(".log")) {
     setStatus("缺少有效的 file 参数（须为 .log 文件名）。", true);
@@ -35,9 +59,7 @@ async function load() {
   setStatus(`正在加载 ${fileParam}…`);
   viewEl.textContent = "";
   try {
-    const data = await fetchJson(
-      `${API_BASE}/api/logs/${encodeURIComponent(fileParam)}`
-    );
+    const data = await fetchLogFullText(fileParam);
     viewEl.textContent = data.content ?? "";
     const lines = (data.content || "").split("\n").length;
     setStatus(`${data.name} · ${lines} 行`);

@@ -2,9 +2,9 @@
 
 import re
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Tuple
 
-from flask import Flask, Response, abort, jsonify, send_from_directory
+from flask import Flask, Response, abort, jsonify, request, send_from_directory
 
 ROOT = Path(__file__).resolve().parent.parent
 LOGS_DIR = ROOT / "logs"
@@ -17,6 +17,10 @@ _LOG_ISSUE_RE = re.compile(
     rb"\bERROR\b|\bWARN\b|FATAL|CRITICAL|Traceback|Exception:|panic:)",
     re.IGNORECASE,
 )
+
+# 单日志接口按行分页，避免整文件 read_text 进内存
+_LOG_DEFAULT_LINE_LIMIT = 50_000
+_LOG_MAX_LINE_LIMIT = 200_000
 
 # 前端静态资源通过 /assets/* 提供（与 index.html 中 link/script 一致）
 app = Flask(__name__, static_folder=str(FRONTEND_DIR), static_url_path="/assets")
@@ -68,7 +72,7 @@ OPENAPI_SPEC = {
         },
         "/api/logs/{filename}": {
             "get": {
-                "summary": "获取单个日志全文",
+                "summary": "获取单个日志片段（按行分页）",
                 "operationId": "getLog",
                 "parameters": [
                     {
@@ -77,11 +81,30 @@ OPENAPI_SPEC = {
                         "required": True,
                         "schema": {"type": "string", "example": "nginx.log"},
                         "description": "logs 目录下的文件名，须以 .log 结尾",
-                    }
+                    },
+                    {
+                        "name": "line_offset",
+                        "in": "query",
+                        "required": False,
+                        "schema": {"type": "integer", "minimum": 0, "default": 0},
+                        "description": "起始行号（从 0 计）",
+                    },
+                    {
+                        "name": "line_limit",
+                        "in": "query",
+                        "required": False,
+                        "schema": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 200000,
+                            "default": 50000,
+                        },
+                        "description": "本段最多行数，上限 200000",
+                    },
                 ],
                 "responses": {
                     "200": {
-                        "description": "日志内容",
+                        "description": "日志内容片段",
                         "content": {
                             "application/json": {
                                 "schema": {
@@ -89,13 +112,27 @@ OPENAPI_SPEC = {
                                     "properties": {
                                         "name": {"type": "string"},
                                         "content": {"type": "string"},
+                                        "line_offset": {"type": "integer"},
+                                        "line_limit": {"type": "integer"},
+                                        "returned_lines": {"type": "integer"},
+                                        "has_more": {
+                                            "type": "boolean",
+                                            "description": "是否还有后续行",
+                                        },
                                     },
-                                    "required": ["name", "content"],
+                                    "required": [
+                                        "name",
+                                        "content",
+                                        "line_offset",
+                                        "line_limit",
+                                        "returned_lines",
+                                        "has_more",
+                                    ],
                                 }
                             }
                         },
                     },
-                    "400": {"description": "非法文件名"},
+                    "400": {"description": "非法文件名或分页参数"},
                     "404": {"description": "文件不存在"},
                 },
             }
@@ -164,6 +201,33 @@ def _safe_log_name(name: str) -> Optional[str]:
     return name
 
 
+def _read_log_slice(path: Path, line_offset: int, line_limit: int) -> tuple[str, bool, int]:
+    """从 line_offset（0 起）起最多读 line_limit 行；不整文件读入内存。返回 (正文, has_more, 本段行数)。"""
+    lines: list[str] = []
+    with path.open("r", encoding="utf-8", errors="replace") as f:
+        for i, line in enumerate(f):
+            if i < line_offset:
+                continue
+            if len(lines) == line_limit:
+                return "".join(lines), True, line_limit
+            lines.append(line)
+    return "".join(lines), False, len(lines)
+
+
+def _parse_line_range() -> Optional[Tuple[int, int]]:
+    """解析 query：line_offset、line_limit；非法则返回 None（调用方应 400）。"""
+    raw_off = request.args.get("line_offset", "0", type=str)
+    raw_lim = request.args.get("line_limit", str(_LOG_DEFAULT_LINE_LIMIT), type=str)
+    try:
+        line_offset = int(raw_off)
+        line_limit = int(raw_lim)
+    except ValueError:
+        return None
+    if line_offset < 0 or line_limit < 1 or line_limit > _LOG_MAX_LINE_LIMIT:
+        return None
+    return line_offset, line_limit
+
+
 def _log_file_has_issue(path: Path) -> bool:
     """读取日志文件头部字节，检测常见 error/warn 等模式（粗粒度，供列表高亮）。"""
     try:
@@ -212,15 +276,28 @@ def list_logs():
 
 @app.route("/api/logs/<filename>")
 def get_log(filename):
-    """读取单个日志全文；非法名 400，不存在 404。"""
+    """读取单个日志片段（按行分页）；非法名或分页参数 400，不存在 404。"""
     safe = _safe_log_name(filename)
     if not safe:
         abort(400)
+    parsed = _parse_line_range()
+    if parsed is None:
+        abort(400)
+    line_offset, line_limit = parsed
     path = LOGS_DIR / safe
     if not path.is_file():
         abort(404)
-    content = path.read_text(encoding="utf-8", errors="replace")
-    return jsonify({"name": safe, "content": content})
+    content, has_more, returned_lines = _read_log_slice(path, line_offset, line_limit)
+    return jsonify(
+        {
+            "name": safe,
+            "content": content,
+            "line_offset": line_offset,
+            "line_limit": line_limit,
+            "returned_lines": returned_lines,
+            "has_more": has_more,
+        }
+    )
 
 
 if __name__ == "__main__":
